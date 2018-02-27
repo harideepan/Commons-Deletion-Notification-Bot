@@ -1,3 +1,9 @@
+########################################################
+#Module 3 : Notifying the wikipedia articles when
+#           images associated with them are nominated for deletion
+#           from commons but were kept
+########################################################
+
 import pywikibot
 import re
 
