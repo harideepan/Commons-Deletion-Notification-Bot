@@ -1,152 +1,166 @@
 ########################################################
-#Module 1 : Notifying the wikipedia articles when
+# Module 1 : Notifying the wikipedia articles when
 #           images associated with them are nominated
 #           for deletion on commons
 ########################################################
 
-import pywikibot, mwparserfromhell
-import hashlib, os
+import hashlib
+import os
 
-cachePath='E:/bot/'
-commons=pywikibot.Site('commons','commons')
-enwiki=pywikibot.Site('en')
+import mwparserfromhell
+import pywikibot
 
-
-#for finding the usage of a particular image in wikipedia articles
-def findusage(page, type):
-        try:
-                first=True
-                usages=[]
-                for usage in enwiki.imageusage(page):
-                        if first:
-                                first=False
-                        usages.append(usage)
-                if not first:
-                        textFile,alreadyTraced=readDesc(page)
-                        wikicode = mwparserfromhell.parser.Parser().parse(textFile)
-                        templates = wikicode.filter_templates()
-                        deleteTemplate=None
-                        if type=="DR":
-                                templateList=['delete','del','deletebecause','puf','ffd']
-                        if type=="nsd":
-                                templateList=['nsd','no source since','no_source_since']
-                        if type=="nld":
-                                templateList=['nld','no license since','no_license_since']
-                        if type=="npd":
-                                templateList=['npd','no permission since','no_permission_since']
-                        for template in templates:
-                                if template.name.lower().strip() in templateList:
-                                        deleteTemplate=template
-                                        break
-                        return usages, deleteTemplate, alreadyTraced
-        except:
-                pass
-        return None, None, None
-
-def readDesc(page):
-        try:
-                global cachePath
-                cacheFile=hashlib.sha1(page.title().encode('utf-8')).hexdigest()
-                if os.path.isfile(cachePath+cacheFile):
-                        print(page.title() + " in cache : " + cacheFile)
-                        f=open(cachePath+cacheFile,'r')
-                        return f.read(), True
-                else:
-                        f=open(cachePath+cacheFile,'w',encoding="utf8")
-                        text=page.get()
-                        f.write(text)
-                        return text, False
-        except:
-                pass
-		
-	
-	
-def articles(catDR, type):
-        try:
-                for page in catDR.articles():
-                        usages, deleteTemplate, alreadyTraced = findusage(page, type)
-                        print(deleteTemplate)
-                        if deleteTemplate is not None:
-                                if usages is not None and len(usages) > 0:
-                                        print(page, usages,)
-                                        imagepath=str(page).replace('commons','')
-                                        imagepath=imagepath.replace('[[File:','[[:c:File:')
-                                        imagepath=imagepath.replace('[[:File:','[[:c:File:')
-                                        reason, subpage, date=parseTemplate(deleteTemplate, type)
-                                        # main space
-                                        counter=0
-                                        for linkedpage in usages:
-                                                counter+=1
-                                                # no more than 10 pages to avoid a flood if the image is very used
-                                                if counter==10:
-                                                        break
-                                                if linkedpage.namespace()==0 and not alreadyTraced:
-                                                        talkPage=linkedpage.toggleTalkPage()
-                                                        if talkPage.exists():
-                                                                textTalkPage=talkPage.get()
-                                                        else:
-                                                                textTalkPage=""
-                                                        # add a message to the associated talk page
-                                                        textTalkPage+="\n== File nominated for deletion on commons == \n The file ''%s'' has been nominated for deletion on Commons \n '''Reason:''' %s \n '''Deletion request:''' %s \nMessage automatically deposited by a robot - -~~~~." % (imagepath, reason, subpage)
-                                                        talkPage.put(textTalkPage, "File proposed for deletion")
-        except:
-                pass
-				
-
-def parseTemplate(deleteTemplate, type):
-        try:
-                reason='Not defined'
-                subpage='Not defined'
-                date='Not defined'
-                if deleteTemplate is not None:
-                        if type == "DR":
-                                if deleteTemplate.has('reason'):
-                                        print ("reason : " + str(deleteTemplate.get('reason').value))
-                                        reason = str(deleteTemplate.get('reason').value)
-                                        reason = reason.replace('{{','{{m|').replace('[[COM:','[[:c:COM:')
-                                        reason = reason.replace('[[Category:','[[:Category:')
-                                        reason = reason.replace('[[Commons:','[[:c:Commons:')
-                                        reason = reason.replace('[[Com:','[[:c:Com:')
-                                        reason = reason.replace("\n"," ")
-                                if deleteTemplate.has('subpage'):
-                                        subpage='[[:commons:Commons:Deletion_requests/' + str(deleteTemplate.get('subpage').value).strip() + '|link]]'
-                        else:
-                                # for nsd / nld / npd there is no subpage, the reason is directly on the image
-                                if type=="nsd":
-                                        reason="No source indicated"
-                                if type=="nld":
-                                        reason="No license indicated"
-                                if type=="npd":
-                                        reason="No permission indicated"
-                                
-                                
-                        if deleteTemplate.has('month'):
-                                date=str(deleteTemplate.get('month').value).strip()
-                        if deleteTemplate.has('day'):
-                                date+=" "+str(deleteTemplate.get('day').value).strip()
-                        if deleteTemplate.has('year'):
-                                date+=" "+str(deleteTemplate.get('year').value).strip()
-        except:
-                pass
-        return reason, subpage, date
+cache_path = 'E:/bot/'
+wikimedia_commons = pywikibot.Site('commons', 'commons')
+english_wikipedia = pywikibot.Site('en')
 
 
-def parseCategory(catName, catPrefix, type):
-        try:
-                catSelected = pywikibot.Category(commons, 'Category:%s' % catName)
-                catGenerator = catSelected.subcategories()
+# notifies the articles associated with the images nominated for deletion
+def notify_articles(category, type):
+    try:
+        for page in category.articles():
+            usages, delete_template, already_traced = find_usage(page, type)
+            if delete_template is not None:
+                if usages is not None and len(usages) > 0:
+                    print(page, usages)
+                    image_path = str(page).replace('commons', '')
+                    image_path = image_path.replace('[[File:', '[[:c:File:')
+                    image_path = image_path.replace('[[:File:', '[[:c:File:')
+                    reason, sub_page, date = parse_template(delete_template, type)
+                    print(date)
+                    counter = 0
+                    for wikipedia_article in usages:
+                        counter += 1
+                        # no more than 10 pages to avoid a flood if the image is very used
+                        if counter == 10:
+                            break
+                        if wikipedia_article.namespace() == 0 and not already_traced:
+                            talk_page = wikipedia_article.toggleTalkPage()
+                            if talk_page.exists():
+                                talk_page_content = talk_page.get()
+                            else:
+                                talk_page_content = ""
+                            # add a message to the associated talk page
+                            talk_page_content += "\n== File nominated for deletion on commons == \n The file ''%s'' " \
+                                                 "has been nominated for deletion on Commons \n '''Reason:''' %s \n " \
+                                                 "'''Deletion request:''' %s \nMessage automatically deposited by a " \
+                                                 "robot - -~~~~." % (image_path, reason, sub_page)
+                            talk_page.put(talk_page_content, "File proposed for deletion")
+    except Exception as e:
+        print(e)
+        pass
 
-                for catDR in catGenerator:
-                        print (catDR.title())
-                        if catDR.title().startswith('Category:%s' % catPrefix):
-                                articles(catDR, type)
-        except:
-                pass
+
+# finds the usages of images
+def find_usage(page, type):
+    global template_list
+    try:
+        has_usage = False
+        usages = []
+        for usage in english_wikipedia.imageusage(page):
+            if not has_usage:
+                has_usage = True
+            usages.append(usage)
+        if has_usage:
+            text_file, already_traced = read_description(page)
+            wiki_code = mwparserfromhell.parser.Parser().parse(text_file)  # extracts the wiki code
+            templates = wiki_code.filter_templates()  # filter the templates from the wiki code
+            delete_template = None
+            if type == "DR":
+                template_list = ['delete', 'del', 'deletebecause', 'puf', 'ffd']
+            if type == "nsd":
+                template_list = ['nsd', 'no source since', 'no_source_since']
+            if type == "nld":
+                template_list = ['nld', 'no license since', 'no_license_since']
+            if type == "npd":
+                template_list = ['npd', 'no permission since', 'no_permission_since']
+            for template in templates:
+                if template.name.lower().strip() in template_list:
+                    delete_template = template
+                    break
+            return usages, delete_template, already_traced
+    except Exception as e:
+        print(e)
+        pass
+    return None, None, None
 
 
-#parseCategory("Media without a source","Media without a source as of","nsd")
-#parseCategory("Media missing permission","Media missing permission as of","npd")
-#parseCategory("Media without a license","Media without a license as of","nld")
-parseCategory("Deletion requests","Deletion requests","DR")
+# parses the description of the image
+def read_description(page):
+    try:
+        global cache_path
+        cache_file = hashlib.sha1(page.title().encode('utf-8')).hexdigest()
+        if os.path.isfile(cache_path + cache_file):  # checks if the description of file already in cache
+            print(page.title() + " in cache : " + cache_file)
+            f = open(cache_path + cache_file, 'r')
+            return f.read(), True
+        else:  # adds the description to cache for later usage
+            f = open(cache_path + cache_file, 'w', encoding="utf8")
+            text = page.get()
+            f.write(text)
+            return text, False
+    except Exception as e:
+        print(e)
+        pass
 
 
+# extracts details from the delete template
+def parse_template(delete_template, type):
+    reason = 'Not defined'
+    sub_page = 'Not defined'
+    date = 'Not defined'
+    try:
+        if delete_template is not None:
+            if type == "DR":  # if it is a deletion request
+                if delete_template.has('reason'):
+                    print("reason : " + str(delete_template.get('reason').value))
+                    reason = str(delete_template.get('reason').value)  # extract the reason for deletion nomination
+                    reason = reason.replace('{{', '{{m|').replace('[[COM:', '[[:c:COM:')
+                    reason = reason.replace('[[Category:', '[[:Category:')
+                    reason = reason.replace('[[Commons:', '[[:c:Commons:')
+                    reason = reason.replace('[[Com:', '[[:c:Com:')
+                    reason = reason.replace("\n", " ")
+                if delete_template.has('subpage'):
+                    sub_page = '[[:commons:Commons:Deletion_requests/' + str(
+                        delete_template.get('subpage').value).strip() + '|link]]'
+            else:
+                # for nsd / nld / npd there is no sub-page, the reason is directly on the image
+                if type == "nsd":
+                    reason = "No source indicated"
+                if type == "nld":
+                    reason = "No license indicated"
+                if type == "npd":
+                    reason = "No permission indicated"
+
+            # extract the date of deletion nomination
+            if delete_template.has('month'):
+                date = str(delete_template.get('month').value).strip()
+            if delete_template.has('day'):
+                date += " " + str(delete_template.get('day').value).strip()
+            if delete_template.has('year'):
+                date += " " + str(delete_template.get('year').value).strip()
+    except Exception as e:
+        print(e)
+        pass
+    return reason, sub_page, date
+
+
+# Parses the given category and it's subcategories
+def parse_category(category_name, category_prefix, type):
+    try:
+        selected_category = pywikibot.Category(wikimedia_commons, 'Category:%s' % category_name)
+        subcategories = selected_category.subcategories()  # get the subcategories
+
+        for category in subcategories:
+            print(category.title())
+            if category.title().startswith('Category:%s' % category_prefix):
+                notify_articles(category, type)  # notify the articles using the images in this category
+    except Exception as e:
+        print(e)
+        pass
+
+
+parse_category("Deletion requests", "Deletion requests", "DR")
+parse_category("Media without a source", "Media without a source as of", "nsd")
+parse_category("Media missing permission", "Media missing permission as of", "npd")
+parse_category("Media without a license", "Media without a license as of", "nld")
