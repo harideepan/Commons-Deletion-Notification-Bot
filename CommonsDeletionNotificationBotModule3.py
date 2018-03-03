@@ -7,6 +7,7 @@
 
 import re
 
+import mwparserfromhell
 import pywikibot
 
 wikimedia_commons = pywikibot.Site('commons', 'commons')
@@ -14,7 +15,7 @@ english_wikipedia = pywikibot.Site('en')
 count = 0
 
 
-# parses the given category and it subcategoriesq
+# parses the given category and it subcategories
 def parse_category(category):
     try:
         # Top level category.
@@ -40,6 +41,27 @@ def parse_category(category):
         pass
 
 
+def get_author_name(page):
+    author = "Not defined"
+    information_template = None
+    try:
+        text = page.get()
+        wiki_code = mwparserfromhell.parser.Parser().parse(text)  # extracts the wiki code
+        templates = wiki_code.filter_templates()  # filter the templates from the wiki code
+        for template in templates:
+            if "information" in template.name.lower().strip():
+                information_template = template
+
+        if information_template is not None:
+            if information_template.has('author'):
+                print("Author : " + str(information_template.get('author').value))
+                author = str(information_template.get('author').value)
+
+    except Exception as e:
+        print(e)
+    return author
+
+
 def notify_linked_articles(page):
     global count
     try:
@@ -52,7 +74,78 @@ def notify_linked_articles(page):
             print(str(file_name))
             if file_page.exists():
                 usages = []
+
+                # notify user who uploaded the image
+                author = get_author_name(file_page)
+                if "User:" in author:
+                    author = author.replace("[[", "")
+                    author = author.replace("]]", "")
+                    author_page = pywikibot.Page(english_wikipedia, author)
+                    if author_page.exists():
+                        author_talk_page = author_page.toggleTalkPage()
+                        if author_talk_page.exists():
+                            author_talk_page_content = author_talk_page.get()
+                        else:
+                            author_talk_page_content = ""
+
+                        # check if already notified for non deletion
+                        test = re.search("== File nominated for deletion on commons == "
+                                         "\n The file ''\[\[:c:" + file_name + "\]\]'' uploaded by you "
+                                         "has been nominated for deletion "
+                                         "on Commons \n '''Reason:''' [\S\s]*\n '''Deletion request:''' [\S\s]*"
+                                         "\nMessage automatically deposited by a robot - -[\S\s]* \(UTC\)\."
+                                         "\n:This image has been decided to be kept."
+                                         "\n:Message automatically deposited by a robot - -[\S\s]* \(UTC\)\.",
+                                         author_talk_page_content)
+
+                        if test is None:  # if not notified
+                            # check if already notified for deletion nomination
+                            test = re.search("== File nominated for deletion on commons == "
+                                             "\n The file ''\[\[:c:" + file_name + "\]\]'' uploaded by you "
+                                             "has been nominated for "
+                                             "deletion on Commons \n '''Reason:''' [\S\s]*"
+                                             "\n '''Deletion request:''' [\S\s]*"
+                                             "\nMessage automatically deposited by a robot - -[\S\s]* \(UTC\)\.",
+                                             author_talk_page_content)
+
+                            if test is not None:  # if notified for deletion nomination
+                                replace_text = test.group(0) + "\n:This image has been decided to be kept." \
+                                                              "\n:Message automatically deposited by a robot - -~~~~."
+
+                                talk_page_content = re.sub("== File nominated for deletion on commons == "
+                                                           "\n The file ''\[\[:c:" + file_name + "\]\]'' uploaded by "
+                                                           "you has been "
+                                                           "nominated for deletion on Commons "
+                                                           "\n '''Reason:''' [\S\s]*\n '''Deletion request:''' [\S\s]*"
+                                                           "\nMessage automatically deposited by a robot "
+                                                           "- -[\S\s]* \(UTC\)\.",
+                                                           replace_text, author_talk_page_content)
+
+                                # write to the talk page of the article
+                                author_talk_page.put(talk_page_content, "File nominated for deletion and kept")
+
+                            else:  # if not notified for deletion nomination
+                                test = re.search("\n== File nominated for deletion on commons =="
+                                                 "\n The file ''\[\[:c:" + file_name + "\]\]'' uploaded by you "
+                                                 "has been nominated for deletion but was kept"
+                                                 "\nMessage automatically deposited by a robot - -[\S\s]* \(UTC\)\.",
+                                                 author_talk_page_content)
+
+                                if test is None:
+                                    author_talk_page_content += "\n== File nominated for deletion on commons ==" \
+                                                         "\n The file ''[[:c:" + file_name + "]]'' uploaded by " \
+                                                         "you has been nominated for deletion but was kept" \
+                                                         "\nMessage automatically deposited by a robot - -~~~~."
+
+                                    # write to the talk page of the article
+                                    author_talk_page.put(author_talk_page_content, "File nominated for"
+                                                                                   " deletion and kept")
+
+                    else:
+                        print("Author page does not exists")
+
                 print("Usages: ")
+                # notify the wikipedia articles using the image
                 for usage in english_wikipedia.imageusage(file_page):
                     if 'Talk:' not in str(usage):
                         print(str(usage))
@@ -64,7 +157,8 @@ def notify_linked_articles(page):
 
                         # check if already notified for non deletion
                         test = re.search("== File nominated for deletion on commons == "
-                                         "\n The file ''\[\[:c:" + file_name + "\]\]'' has been nominated for deletion "
+                                         "\n The file ''\[\[:c:" + file_name + "\]\]'' used in this article "
+                                         "has been nominated for deletion "
                                          "on Commons \n '''Reason:''' [\S\s]*\n '''Deletion request:''' [\S\s]*"
                                          "\nMessage automatically deposited by a robot - -[\S\s]* \(UTC\)\."
                                          "\n:This image has been decided to be kept."
@@ -74,7 +168,8 @@ def notify_linked_articles(page):
                         if test is None:  # if not notified
                             # check if already notified for deletion nomination
                             test = re.search("== File nominated for deletion on commons == "
-                                             "\n The file ''\[\[:c:" + file_name + "\]\]'' has been nominated for "
+                                             "\n The file ''\[\[:c:" + file_name + "\]\]'' used in this article "
+                                             "has been nominated for "
                                              "deletion on Commons \n '''Reason:''' [\S\s]*"
                                              "\n '''Deletion request:''' [\S\s]*"
                                              "\nMessage automatically deposited by a robot - -[\S\s]* \(UTC\)\.",
@@ -85,7 +180,8 @@ def notify_linked_articles(page):
                                                               "\n:Message automatically deposited by a robot - -~~~~."
 
                                 talk_page_content = re.sub("== File nominated for deletion on commons == "
-                                                           "\n The file ''\[\[:c:" + file_name + "\]\]'' has been "
+                                                           "\n The file ''\[\[:c:" + file_name + "\]\]'' "
+                                                           "used in this article has been "
                                                            "nominated for deletion on Commons "
                                                            "\n '''Reason:''' [\S\s]*\n '''Deletion request:''' [\S\s]*"
                                                            "\nMessage automatically deposited by a robot "

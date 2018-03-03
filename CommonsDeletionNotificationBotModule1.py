@@ -19,7 +19,7 @@ english_wikipedia = pywikibot.Site('en')
 def notify_articles(category, type):
     try:
         for page in category.articles():
-            usages, delete_template, already_traced = find_usage(page, type)
+            usages, delete_template, information_template, already_traced = find_usage(page, type)
             if delete_template is not None:
                 if usages is not None and len(usages) > 0:
                     print(page, usages)
@@ -27,8 +27,31 @@ def notify_articles(category, type):
                     image_path = image_path.replace('[[File:', '[[:c:File:')
                     image_path = image_path.replace('[[:File:', '[[:c:File:')
                     reason, sub_page, date = parse_template(delete_template, type)
-                    print(date)
+
+                    # notify the user who uploaded the image
+                    author = get_author_name(information_template)
+                    if not already_traced:
+                        if "User:" in author:
+                            author = author.replace("[[", "")
+                            author = author.replace("]]", "")
+                            author_page = pywikibot.Page(english_wikipedia, author)
+                            if author_page.exists():
+                                author_talk_page = author_page.toggleTalkPage()
+                                if author_talk_page.exists():
+                                    author_talk_page_content = author_talk_page.get()
+                                else:
+                                    author_talk_page_content = ""
+                                author_talk_page_content += "\n== File nominated for deletion on commons == " \
+                                                            "\n The file ''%s'' uploaded by" \
+                                                            " you has been nominated for " \
+                                                            "deletion on Commons \n '''Reason:''' %s \n " \
+                                                            "'''Deletion Request:''' %s \nMessage automatically " \
+                                                            "deposited by a robot - -~~~~." % \
+                                                            (image_path, reason, sub_page)
+                                author_talk_page.put(author_talk_page_content, "File proposed for deletion")
+
                     counter = 0
+                    # notify the wikipedia articles using the image
                     for wikipedia_article in usages:
                         counter += 1
                         # no more than 10 pages to avoid a flood if the image is very used
@@ -42,13 +65,27 @@ def notify_articles(category, type):
                                 talk_page_content = ""
                             # add a message to the associated talk page
                             talk_page_content += "\n== File nominated for deletion on commons == \n The file ''%s'' " \
-                                                 "has been nominated for deletion on Commons \n '''Reason:''' %s \n " \
+                                                 "used in this article has been nominated for " \
+                                                 "deletion on Commons \n '''Reason:''' %s \n " \
                                                  "'''Deletion request:''' %s \nMessage automatically deposited by a " \
                                                  "robot - -~~~~." % (image_path, reason, sub_page)
                             talk_page.put(talk_page_content, "File proposed for deletion")
     except Exception as e:
         print(e)
         pass
+
+
+# gets the author name from information template of the image
+def get_author_name(information_template):
+    author = "Not defined"
+    try:
+        if information_template is not None:
+            if information_template.has('author'):
+                print("Author : " + str(information_template.get('author').value))
+                author = str(information_template.get('author').value)
+    except Exception as e:
+        print(e)
+    return author
 
 
 # finds the usages of images
@@ -66,6 +103,8 @@ def find_usage(page, type):
             wiki_code = mwparserfromhell.parser.Parser().parse(text_file)  # extracts the wiki code
             templates = wiki_code.filter_templates()  # filter the templates from the wiki code
             delete_template = None
+            information_template = None
+
             if type == "DR":
                 template_list = ['delete', 'del', 'deletebecause', 'puf', 'ffd']
             if type == "nsd":
@@ -74,15 +113,18 @@ def find_usage(page, type):
                 template_list = ['nld', 'no license since', 'no_license_since']
             if type == "npd":
                 template_list = ['npd', 'no permission since', 'no_permission_since']
+
             for template in templates:
                 if template.name.lower().strip() in template_list:
                     delete_template = template
-                    break
-            return usages, delete_template, already_traced
+                if "information" in template.name.lower().strip():
+                    information_template = template
+
+            return usages, delete_template, information_template, already_traced
     except Exception as e:
         print(e)
         pass
-    return None, None, None
+    return None, None, None, None
 
 
 # parses the description of the image
@@ -161,6 +203,6 @@ def parse_category(category_name, category_prefix, type):
 
 
 parse_category("Deletion requests", "Deletion requests", "DR")
-parse_category("Media without a source", "Media without a source as of", "nsd")
-parse_category("Media missing permission", "Media missing permission as of", "npd")
-parse_category("Media without a license", "Media without a license as of", "nld")
+# parse_category("Media without a source", "Media without a source as of", "nsd")
+# parse_category("Media missing permission", "Media missing permission as of", "npd")
+# parse_category("Media without a license", "Media without a license as of", "nld")

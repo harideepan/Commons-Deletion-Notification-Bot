@@ -50,7 +50,8 @@ def notify_articles():
 
                         # check if already notified for deletion
                         test = re.search("== File nominated for deletion on commons == \n The file "
-                                         "''\[\[:c:" + file_name + "\]\]'' has been nominated for deletion on Commons "
+                                         "''\[\[:c:" + file_name + "\]\]'' used in this article has "
+                                         "been nominated for deletion on Commons "
                                          "\n '''Reason:''' [\S\s]*\n '''Deletion request:''' [\S\s]*"
                                          "\nMessage automatically deposited by a robot - -[\S\s]* \(UTC\)\."
                                          "\n:This image has been deleted from Commons"
@@ -60,7 +61,8 @@ def notify_articles():
                         if test is None:  # if not notified
                             # check if already notified for deletion nomination
                             test = re.search("== File nominated for deletion on commons == \n The file "
-                                             "''\[\[:c:" + file_name + "\]\]'' has been nominated for deletion on "
+                                             "''\[\[:c:" + file_name + "\]\]'' used in this article "
+                                             "has been nominated for deletion on "
                                              "Commons \n '''Reason:''' [\S\s]*\n '''Deletion request:''' [\S\s]*"
                                              "\nMessage automatically deposited by a robot - -[\S\s]* \(UTC\)\.",
                                              talk_page_content)
@@ -71,7 +73,8 @@ def notify_articles():
 
                                 talk_page_content = re.sub("== File nominated for deletion on commons == "
                                                            "\n The file ''\[\[:c:" + file_name + "\]\]'' "
-                                                           "has been nominated for deletion on Commons "
+                                                           "used in this article has been "
+                                                           "nominated for deletion on Commons "
                                                            "\n '''Reason:''' [\S\s]*\n '''Deletion request:''' [\S\s]*"
                                                            "\nMessage automatically deposited by a robot "
                                                            "- -[\S\s]* \(UTC\)\.", replace_text, talk_page_content)
