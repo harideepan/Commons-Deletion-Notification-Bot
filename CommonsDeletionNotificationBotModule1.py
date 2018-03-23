@@ -6,6 +6,7 @@
 
 import hashlib
 import os
+import logging
 
 import mwparserfromhell
 import pywikibot
@@ -13,63 +14,96 @@ import pywikibot
 cache_path = 'E:/bot/'
 wikimedia_commons = pywikibot.Site('commons', 'commons')
 english_wikipedia = pywikibot.Site('en')
+stop_flag = False
+
+logging.basicConfig(filename="deletion_nomination.log", format='%(asctime)s %(message)s', filemode='w')
+logger = logging.getLogger()
+logger.setLevel(pywikibot.logging.INFO)
 
 
 # notifies the articles associated with the images nominated for deletion
-def notify_articles(category, type):
+def notify_articles(ui, category, type):
     try:
         for page in category.articles():
+            if stop_flag:
+                break
             usages, delete_template, information_template, already_traced = find_usage(page, type)
-            if delete_template is not None:
-                if usages is not None and len(usages) > 0:
-                    print(page, usages)
-                    image_path = str(page).replace('commons', '')
-                    image_path = image_path.replace('[[File:', '[[:c:File:')
-                    image_path = image_path.replace('[[:File:', '[[:c:File:')
-                    reason, sub_page, date = parse_template(delete_template, type)
+            if not already_traced:
+                if delete_template is not None:
+                    if usages is not None and len(usages) > 0:
 
-                    # notify the user who uploaded the image
-                    author = get_author_name(information_template)
-                    if not already_traced:
-                        if "User:" in author:
-                            author = author.replace("[[", "")
-                            author = author.replace("]]", "")
-                            author_page = pywikibot.Page(english_wikipedia, author)
-                            if author_page.exists():
-                                author_talk_page = author_page.toggleTalkPage()
-                                if author_talk_page.exists():
-                                    author_talk_page_content = author_talk_page.get()
+                        file_name = str(page).replace("[[commons:File:", "")
+                        file_name = file_name.replace("]]", "")
+                        print_line(ui)
+                        print(page, usages)
+                        ui.listWidget.addItem("File:" + file_name + "\nUsages:" + str(usages))
+                        logger.info("File:" + file_name)
+                        logger.info("Usages:" + str(usages))
+                        ui.listWidget.scrollToBottom()
+
+                        image_path = str(page).replace('commons', '')
+                        image_path = image_path.replace('[[File:', '[[:c:File:')
+                        image_path = image_path.replace('[[:File:', '[[:c:File:')
+                        reason, sub_page, date = parse_template(ui, delete_template, type)
+
+                        # notify the user who uploaded the image
+                        author = get_author_name(information_template)
+                        ui.listWidget.addItem("Author: " + author)
+                        logger.info("Author: " + author)
+                        if not already_traced:
+                            if "User:" in author:
+                                author = author.replace("[[", "")
+                                author = author.replace("]]", "")
+                                author_page = pywikibot.Page(english_wikipedia, author)
+                                if author_page.exists():
+                                    author_talk_page = author_page.toggleTalkPage()
+                                    if author_talk_page.exists():
+                                        author_talk_page_content = author_talk_page.get()
+                                    else:
+                                        author_talk_page_content = ""
+                                    author_talk_page_content += \
+                                        "\n== File nominated for " \
+                                        "deletion on commons == " \
+                                        "\n The file ''%s'' uploaded by" \
+                                        " you has been nominated for " \
+                                        "deletion on Commons \n '''Reason:''' %s \n " \
+                                        "'''Deletion Request:''' %s " \
+                                        "\nMessage automatically " \
+                                        "deposited by a robot - -~~~~." % \
+                                        (image_path, reason, sub_page)
+                                    author_talk_page.put(author_talk_page_content, "File proposed for deletion")
+                                    ui.listWidget.addItem("Author page saved")
+                                    logger.info("Author page saved")
+                                    ui.listWidget.scrollToBottom()
+                        
+                        counter = 0
+                        # notify the wikipedia articles using the image
+                        for wikipedia_article in usages:
+                            counter += 1
+                            # no more than 10 pages to avoid a flood if the image is very used
+                            if counter == 10:
+                                break
+                            if wikipedia_article.namespace() == 0 and not already_traced:
+                                talk_page = wikipedia_article.toggleTalkPage()
+                                if talk_page.exists():
+                                    talk_page_content = talk_page.get()
                                 else:
-                                    author_talk_page_content = ""
-                                author_talk_page_content += "\n== File nominated for deletion on commons == " \
-                                                            "\n The file ''%s'' uploaded by" \
-                                                            " you has been nominated for " \
-                                                            "deletion on Commons \n '''Reason:''' %s \n " \
-                                                            "'''Deletion Request:''' %s \nMessage automatically " \
-                                                            "deposited by a robot - -~~~~." % \
-                                                            (image_path, reason, sub_page)
-                                author_talk_page.put(author_talk_page_content, "File proposed for deletion")
-
-                    counter = 0
-                    # notify the wikipedia articles using the image
-                    for wikipedia_article in usages:
-                        counter += 1
-                        # no more than 10 pages to avoid a flood if the image is very used
-                        if counter == 10:
-                            break
-                        if wikipedia_article.namespace() == 0 and not already_traced:
-                            talk_page = wikipedia_article.toggleTalkPage()
-                            if talk_page.exists():
-                                talk_page_content = talk_page.get()
-                            else:
-                                talk_page_content = ""
-                            # add a message to the associated talk page
-                            talk_page_content += "\n== File nominated for deletion on commons == \n The file ''%s'' " \
-                                                 "used in this article has been nominated for " \
-                                                 "deletion on Commons \n '''Reason:''' %s \n " \
-                                                 "'''Deletion request:''' %s \nMessage automatically deposited by a " \
-                                                 "robot - -~~~~." % (image_path, reason, sub_page)
-                            talk_page.put(talk_page_content, "File proposed for deletion")
+                                    talk_page_content = ""
+                                # add a message to the associated talk page
+                                talk_page_content += \
+                                    "\n== File nominated for" \
+                                    " deletion on commons == " \
+                                    "\n The file ''%s'' " \
+                                    "used in this article has " \
+                                    "been nominated for " \
+                                    "deletion on Commons \n '''Reason:''' %s \n " \
+                                    "'''Deletion request:''' %s " \
+                                    "\nMessage automatically deposited by a " \
+                                    "robot - -~~~~." % (image_path, reason, sub_page)
+                                talk_page.put(talk_page_content, "File proposed for deletion")
+                                ui.listWidget.addItem("Talk page " + str(talk_page) + " saved")
+                                logger.info("Talk page " + str(talk_page) + " saved")
+                                ui.listWidget.scrollToBottom()
     except Exception as e:
         print(e)
         pass
@@ -134,6 +168,7 @@ def read_description(page):
         cache_file = hashlib.sha1(page.title().encode('utf-8')).hexdigest()
         if os.path.isfile(cache_path + cache_file):  # checks if the description of file already in cache
             print(page.title() + " in cache : " + cache_file)
+            logger.info(page.title() + " in cache : " + cache_file)
             f = open(cache_path + cache_file, 'r')
             return f.read(), True
         else:  # adds the description to cache for later usage
@@ -147,7 +182,7 @@ def read_description(page):
 
 
 # extracts details from the delete template
-def parse_template(delete_template, type):
+def parse_template(ui, delete_template, type):
     reason = 'Not defined'
     sub_page = 'Not defined'
     date = 'Not defined'
@@ -156,6 +191,10 @@ def parse_template(delete_template, type):
             if type == "DR":  # if it is a deletion request
                 if delete_template.has('reason'):
                     print("reason : " + str(delete_template.get('reason').value))
+                    logger.info("reason : " + str(delete_template.get('reason').value))
+                    ui.listWidget.addItem("Reason: " + str(delete_template.get('reason').value))
+                    
+                    ui.listWidget.scrollToBottom()
                     reason = str(delete_template.get('reason').value)  # extract the reason for deletion nomination
                     reason = reason.replace('{{', '{{m|').replace('[[COM:', '[[:c:COM:')
                     reason = reason.replace('[[Category:', '[[:Category:')
@@ -166,7 +205,7 @@ def parse_template(delete_template, type):
                     sub_page = '[[:commons:Commons:Deletion_requests/' + str(
                         delete_template.get('subpage').value).strip() + '|link]]'
             else:
-                # for nsd / nld / npd there is no sub-page, the reason is directly on the image
+                # for nsd / nld / npd there is no sub-page, the reason is directly on the images
                 if type == "nsd":
                     reason = "No source indicated"
                 if type == "nld":
@@ -188,21 +227,48 @@ def parse_template(delete_template, type):
 
 
 # Parses the given category and it's subcategories
-def parse_category(category_name, category_prefix, type):
+def parse_category(ui, category_name, category_prefix, type):
     try:
+        print_line(ui)
+        ui.listWidget.addItem("Notifying articles about deletion nomination")
+        print_line(ui)
+        global stop_flag
+        stop_flag = False
         selected_category = pywikibot.Category(wikimedia_commons, 'Category:%s' % category_name)
         subcategories = selected_category.subcategories()  # get the subcategories
-
         for category in subcategories:
+            if stop_flag:
+                break
+            ui.listWidget.addItem("Parsing " + str(category.title()))
+            logger.info("Parsing " + str(category.title()))
             print(category.title())
             if category.title().startswith('Category:%s' % category_prefix):
-                notify_articles(category, type)  # notify the articles using the images in this category
+                notify_articles(ui, category, type)  # notify the articles using the images in this category
+        ui.listWidget.addItem("Bot Terminated")
+        logger.info("Bot Terminated")
+        stop_flag = False
+        print_line(ui)
+        ui.listWidget.scrollToBottom()
+        ui.pushButton_1.setDisabled(False)
+        ui.pushButton_2.setDisabled(False)
+        ui.pushButton_3.setDisabled(False)
     except Exception as e:
         print(e)
         pass
 
 
-parse_category("Deletion requests", "Deletion requests", "DR")
+def stop(ui):
+    global stop_flag
+    stop_flag = True
+    ui.listWidget.addItem("Bot Termination invoked. Please wait...")
+    ui.pushButton_4.setDisabled(True)
+
+
+def print_line(ui):
+    ui.listWidget.addItem("==========================================================")
+    ui.listWidget.scrollToBottom()
+
+# parse_category("Deletion requests", "Deletion requests", "DR")
 # parse_category("Media without a source", "Media without a source as of", "nsd")
 # parse_category("Media missing permission", "Media missing permission as of", "npd")
 # parse_category("Media without a license", "Media without a license as of", "nld")
