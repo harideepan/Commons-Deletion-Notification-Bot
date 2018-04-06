@@ -62,5 +62,5 @@ class AppWindow(QMainWindow):
 
 app = QApplication(sys.argv)
 w = AppWindow()
-w.setMinimumSize(800, 600)
+w.setMinimumSize(700, 500)
 sys.exit(app.exec_())
